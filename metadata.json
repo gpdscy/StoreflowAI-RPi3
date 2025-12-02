@@ -1,6 +1,6 @@
 {
   "name": "StoreFlow AI Analytics",
-  "description": "AI-powered retail analytics dashboard for counting people, tracking flow, and generating heatmaps using Gemini Vision.",
+  "description": "Local AI retail analytics dashboard using Ollama and Vision LLMs for privacy-focused people counting and heatmap generation.",
   "requestFramePermissions": [
     "camera"
   ]

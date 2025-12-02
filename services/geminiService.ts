@@ -14,26 +14,35 @@ export const analyzeFrame = async (
   settings: AISettings
 ): Promise<DetectionResult | null> => {
   try {
-    // Clean base64 string (Ollama usually expects the raw base64 without prefix, 
-    // but some clients handle it. We strip it to be safe.)
+    // Clean base64 string
     const cleanBase64 = base64Image.replace(/^data:image\/(png|jpeg|jpg);base64,/, "");
+
+    // Valid zones list for the prompt
+    const validZones = Object.values(StoreZone).join(', ');
 
     const prompt = `
       Analyze this surveillance image of a retail store.
+      
       Task:
       1. Count the visible people.
-      2. Locate them in a 3x3 grid (Top-Left, Top-Center, Top-Right, Mid-Left, Mid-Center, Mid-Right, Bottom-Left, Bottom-Center, Bottom-Right).
+      2. Identify which zones they are in based on a 3x3 grid: ${validZones}.
       
-      Return ONLY a JSON object with this exact schema:
+      Output Requirement:
+      - Return ONLY a raw JSON object.
+      - DO NOT use markdown code blocks (like \`\`\`json).
+      - Use the exact schema below:
+      
       {
-        "personCount": number,
-        "detectedZones": ["ZoneName", "ZoneName"]
+        "personCount": 0,
+        "detectedZones": ["Top-Left", "Mid-Center"]
       }
-      Do not include markdown formatting or explanations.
     `;
 
     // Call Ollama API
-    const response = await fetch(`${settings.serverUrl.replace(/\/$/, '')}/api/generate`, {
+    // Ensure no trailing slash in URL
+    const baseUrl = settings.serverUrl.replace(/\/$/, '');
+    
+    const response = await fetch(`${baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -43,7 +52,11 @@ export const analyzeFrame = async (
         prompt: prompt,
         images: [cleanBase64],
         stream: false,
-        format: "json" // Force JSON mode (supported by newer Ollama versions)
+        format: "json", // Enforce JSON mode
+        options: {
+          temperature: 0.2, // Lower temperature for more deterministic output
+          num_predict: 256
+        }
       }),
     });
 
@@ -56,20 +69,30 @@ export const analyzeFrame = async (
     // Parse the response field from Ollama
     let resultData = data.response;
     
-    // If it's a string, try to parse it as JSON
+    // Handle string response (Ollama often returns a string containing JSON)
     if (typeof resultData === 'string') {
-      const parsed = tryParseJSON(resultData);
+      // 1. Strip Markdown code blocks if present
+      let cleanJson = resultData.replace(/```json\n?|\n?```/g, '').trim();
+      
+      // 2. Sometimes models add text before/after, try to extract the JSON object regex
+      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        cleanJson = jsonMatch[0];
+      }
+
+      const parsed = tryParseJSON(cleanJson);
       if (parsed) {
         resultData = parsed;
       } else {
-        console.warn("Could not parse Ollama response as JSON", resultData);
-        // Fallback or regex extraction could go here
+        console.warn("Could not parse Ollama response as JSON:", resultData);
         return null;
       }
     }
 
-    // Map string response to Enum
-    const zones: StoreZone[] = (resultData.detectedZones || []).map((z: string) => z as StoreZone);
+    // Map string response to Enum safely
+    const zones: StoreZone[] = (resultData.detectedZones || [])
+      .filter((z: string) => Object.values(StoreZone).includes(z as StoreZone))
+      .map((z: string) => z as StoreZone);
 
     return {
       personCount: typeof resultData.personCount === 'number' ? resultData.personCount : 0,
