@@ -1,0 +1,7 @@
+{
+  "name": "StoreFlow AI Analytics",
+  "description": "AI-powered retail analytics dashboard for counting people, tracking flow, and generating heatmaps using Gemini Vision.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
